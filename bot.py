@@ -2,87 +2,75 @@ import time
 import re
 import platform
 import os
-import pyautogui 
+import pyautogui
+
+# --- НАСТРОЙКИ КОДИРОВКИ ---
+FILE_ENCODING = "cp1251"  # Кодировка для русской Windows
+CHAT_KEY = 't'            # Клавиша открытия чата
+DELAY = 0.1               # Задержка между действиями
 
 def solve_expression(expression):
     try:
-        expression = expression.replace("^", "**")
-        result = eval(expression)
-        return result
-    except (SyntaxError, NameError, TypeError, ZeroDivisionError):
-        return None 
+        expression = expression.replace("^", "**").replace(' ', '')
+        return str(round(eval(expression), 2)).rstrip('0').rstrip('.')
+    except:
+        return None
 
-def send_chat_message(message):
+def send_to_chat(message):
+    """Отправка сообщения в активное окно"""
     try:
-        minecraft_window = None
-        for window in pyautogui.getAllWindows():
-            if "Minecraft" in window.title:
-                minecraft_window = window
-                break
-
-        if minecraft_window:
-            minecraft_window.activate()
-        else:
-            print("Не удалось найти окно Minecraft. Убедитесь, что оно запущено и видимо.")
-            return
-
-        pyautogui.press('t')
-        time.sleep(0.1)  
-
-       
-        pyautogui.typewrite(message)
-        time.sleep(0.1)
-
-      
+        # Открываем чат и вводим ответ
+        pyautogui.press(CHAT_KEY)
+        time.sleep(DELAY)
+        pyautogui.write(str(message))
+        time.sleep(DELAY)
         pyautogui.press('enter')
-        time.sleep(0.1)
-
+        return True
     except Exception as e:
-        print(f"Ошибка при отправке сообщения в чат (pyautogui): {e}")
+        print(f"Ошибка ввода: {str(e)}")
+        return False
 
-
-def process_log_file(log_file_path, last_position):
+def process_log(log_path, last_pos):
     try:
-        with open(log_file_path, 'r', encoding='utf-8') as log_file:
-            log_file.seek(last_position) 
-
-            for line in log_file:
-                match = re.search(r"\[.*?\] \[.*?\]: \[CHAT\] Чат-Игра \| Сколько будет ([\d\+\-\*\/\^\(\)\s]+)\? Кто первый решит, получит нагрду ₴15000", line)
-
+        with open(log_path, "r", encoding=FILE_ENCODING, errors="ignore") as f:
+            f.seek(last_pos)
+            
+            for line in f:
+                match = re.search(
+                    r"Чат-Игра \| Сколько будет (.+?)\?",
+                    line.strip()
+                )
+                
                 if match:
-                    expression = match.group(1).strip()
-
-                    result = solve_expression(expression)
-
-                    if result is not None:
-                        response = f"{result}"
-                        send_chat_message(response)
-                    else:
-                        print(f"Ошибка: Не удалось решить выражение '{expression}'")
-
-            return log_file.tell()
-
-    except FileNotFoundError:
-        print(f"Ошибка: Файл лога не найден: {log_file_path}")
-        return 0 
+                    task = match.group(1)
+                    if answer := solve_expression(task):
+                        print(f"Решаем: {task} = {answer}")
+                        send_to_chat(answer)
+            return f.tell()
+    
     except Exception as e:
-        print(f"Произошла ошибка при чтении файла лога: {e}")
-        return last_position
+        print(f"Ошибка: {str(e)}")
+        return last_pos
 
-system = platform.system()
-if system == "Windows":
-    log_file_path = "%appdata%\\.minecraft\\logs\\latest.log"
-    log_file_path = os.path.expandvars(log_file_path)
-    log_file_path = log_file_path.replace("\\", "/")
-elif system == "Darwin":
-    log_file_path = "~/Library/Application Support/minecraft/logs/latest.log"
-    log_file_path = os.path.expanduser(log_file_path)
-else:
-    log_file_path = "~/.minecraft/logs/latest.log"
-    log_file_path = os.path.expanduser(log_file_path)
+def get_log_path():
+    system = platform.system()
+    return {
+        "Windows": os.path.join(os.getenv('APPDATA'), ".minecraft", "logs", "latest.log"),
+        "Darwin": os.path.expanduser("~/Library/Application Support/minecraft/logs/latest.log"),
+        "Linux": os.path.expanduser("~/.minecraft/logs/latest.log")
+    }.get(system)
 
-last_position = 0
+if __name__ == "__main__":
+    log_file = get_log_path()
+    pos = 0
+    
+    if not log_file or not os.path.exists(log_file):
+        print(f"Файл логов не найден: {log_file}")
+        exit()
+        
+    print("Скрипт запущен. Активируйте окно Minecraft!")
+    print("Для выхода нажмите Ctrl+C")
 
-while True:
-    last_position = process_log_file(log_file_path, last_position)
-    time.sleep(1)  
+    while True:
+        pos = process_log(log_file, pos)
+        time.sleep(1)
